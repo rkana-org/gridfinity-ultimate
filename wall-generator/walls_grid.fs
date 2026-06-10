@@ -147,8 +147,18 @@ function buildWalls(context is Context, id is Id, definition is map, sketchPlane
     const h = definition.height;
 
     const interiorRects = computeInteriorRects(rooms, colEdges, rowEdges, t, definition.skipOuterWalls);
-    if (definition.skipOuterWalls && isSingleFullInteriorRect(interiorRects, w, d))
-        return { "bottomSeedLines" : [], "easyGrabArcSeedPoints" : [] };
+    const eps = TOLERANCE.zeroLength * meter;
+    const hasPlanarWallArea = w > eps && d > eps;
+    const allWallsSkipped = definition.skipOuterWalls && isSingleFullInteriorRect(interiorRects, w, d);
+    // Even when the divider wall body is empty (for example a one-room layout with
+    // skipped outer walls, or a zero-depth/zero-width helper layout), EasyGrab ramps
+    // may still be requested as standalone tools to boolean into an existing tub.
+    if (!hasPlanarWallArea || allWallsSkipped)
+    {
+        const easyGrabResult = buildEasyGrabs(context, id + "easygrab", definition, sketchPlane, normal, colEdges, rowEdges, easygrabs,
+                                              qNothing());
+        return { "bottomSeedLines" : [], "easyGrabArcSeedPoints" : easyGrabResult.arcSeedPoints };
+    }
 
     var outer = newSketchOnPlane(context, id + "outerSketch", { "sketchPlane" : sketchPlane });
     skRectangle(outer, "outer", {
@@ -165,7 +175,11 @@ function buildWalls(context is Context, id is Id, definition is map, sketchPlane
     });
 
     if (size(interiorRects) == 0)
-        return { "bottomSeedLines" : [], "easyGrabArcSeedPoints" : [] };
+    {
+        const easyGrabResult = buildEasyGrabs(context, id + "easygrab", definition, sketchPlane, normal, colEdges, rowEdges, easygrabs,
+                                              qCreatedBy(id + "outerExtrude", EntityType.BODY));
+        return { "bottomSeedLines" : [], "easyGrabArcSeedPoints" : easyGrabResult.arcSeedPoints };
+    }
 
     // Keep every room void in its own sketch/extrude.  A single sketch with many
     // overlapping rectangles makes qSketchRegion select the incidental regions enclosed
@@ -210,15 +224,17 @@ function buildWalls(context is Context, id is Id, definition is map, sketchPlane
 function buildEasyGrabs(context is Context, id is Id, definition is map, sketchPlane is Plane, normal is Vector,
                         colEdges is array, rowEdges is array, easygrabs is array, targetBody is Query)
 {
+    const hasTargetBody = !isQueryEmpty(context, targetBody);
     if (definition.debugEasyGrab)
     {
         println("Walls Grid EasyGrab debug ---");
         println("easygrab count: " ~ size(easygrabs));
         println("target body count: " ~ size(evaluateQuery(context, targetBody)));
-        debug(context, targetBody, DebugColor.YELLOW);
+        if (hasTargetBody)
+            debug(context, targetBody, DebugColor.YELLOW);
     }
 
-    if (size(easygrabs) == 0 || isQueryEmpty(context, targetBody))
+    if (size(easygrabs) == 0)
         return { "arcSeedPoints" : [] };
 
     const eps = TOLERANCE.zeroLength * meter;
@@ -294,7 +310,7 @@ function buildEasyGrabs(context is Context, id is Id, definition is map, sketchP
         }
     }
 
-    if (size(grabBodies) != 0)
+    if (size(grabBodies) != 0 && hasTargetBody)
     {
         const grabTools = qUnion(grabBodies);
         if (definition.debugEasyGrab)
@@ -332,7 +348,7 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
         const sx1 = x1 - easyGrabBoundaryInset(grab.c1 == ncols - 1, skipOuterWalls, wallThickness);
         const yFace0 = y0 + easyGrabBoundaryInset(grab.r0 == 0, skipOuterWalls, wallThickness);
         const yFace1 = y1 - easyGrabBoundaryInset(grab.r1 == nrows - 1, skipOuterWalls, wallThickness);
-        const maxRadius = 0.8 * (yFace1 - yFace0);
+        const maxRadius = easyGrabMaxRadius(yFace1 - yFace0, y1 - y0, grab.radius);
         if (grab.side == "north")
         {
             const inward = yDir;
@@ -359,7 +375,7 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
     const sy1 = y1 - easyGrabBoundaryInset(grab.r1 == nrows - 1, skipOuterWalls, wallThickness);
     const xFace0 = x0 + easyGrabBoundaryInset(grab.c0 == 0, skipOuterWalls, wallThickness);
     const xFace1 = x1 - easyGrabBoundaryInset(grab.c1 == ncols - 1, skipOuterWalls, wallThickness);
-    const maxRadius = 0.8 * (xFace1 - xFace0);
+    const maxRadius = easyGrabMaxRadius(xFace1 - xFace0, x1 - x0, grab.radius);
     if (grab.side == "west")
     {
         const inward = xDir;
@@ -380,6 +396,18 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
                 "length" : sy1 - sy0,
                 "maxRadius" : maxRadius };
     }
+}
+
+function easyGrabMaxRadius(faceSpan is ValueWithUnits, rawSpan is ValueWithUnits, requestedRadius is ValueWithUnits) returns ValueWithUnits
+{
+    const eps = TOLERANCE.zeroLength * meter;
+    // A zero-width/zero-depth easygrab region is useful when the ramp is meant to
+    // be generated by itself and booleaned into an already-existing tub wall.  In
+    // that case the wall-face insets cross over, so the usual compartment-size
+    // clamp would make the effective radius negative and silently skip the ramp.
+    if (rawSpan <= eps)
+        return requestedRadius;
+    return 0.8 * faceSpan;
 }
 
 function easyGrabBoundaryInset(isOuterBoundary is boolean, skipOuterWalls is boolean, wallThickness is ValueWithUnits) returns ValueWithUnits
