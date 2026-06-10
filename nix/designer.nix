@@ -79,7 +79,7 @@ stdenvNoCC.mkDerivation {
 
   meta = {
     description = "Static client-side configurator for the Gridfinity Ultimate Onshape model";
-    homepage = "https://github.com/oddlama/gridfinity-ultimate";
+    homepage = "https://github.com/rkana-org/gridfinity-ultimate";
     license = lib.licenses.mit;
   };
 }
