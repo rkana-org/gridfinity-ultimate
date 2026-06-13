@@ -45,7 +45,7 @@ Merged cells become one room, so internal walls inside that rectangle are remove
 { "side": "north", "cols": [c0, c1], "rows": [r0, r1], "radius": "21 mm" }
 ```
 
-`side` is one of `north`, `south`, `east`, or `west`. A quarter-round ramp is added along that side of the region, tangent to the bottom plane and the adjacent wall face. The radius must be positive. The effective radius is clamped to the wall height and to 80% of the region's inward size (`north`/`south`: region depth, `east`/`west`: region width).
+`side` is one of `north`, `south`, `east`, or `west`. A quarter-round ramp is added along that side of the region, tangent to the bottom plane and the adjacent wall face. The radius must be positive. The effective radius is clamped to the wall height and to 80% of the region's inward size (`north`/`south`: region depth, `east`/`west`: region width). If the selected side is on the outer grid boundary, `Outer wall EasyGrab inset` can shift only the arc inward while keeping the wall-side edge fixed.
 
 ## Feature parameters
 
@@ -56,6 +56,7 @@ Merged cells become one room, so internal walls inside that rectangle are remove
 - Layout can be pasted directly or read from a Part Studio variable.
 - Optional `Skip outer walls` removes outer walls where rooms touch the boundary.
 - Optional JSON-defined EasyGrab ramps add quarter-round pull-out ramps at selected room sides.
+- Outer wall EasyGrab inset offsets boundary scoop arcs inward without moving the wall-side face.
 - Standard Onshape boolean result modes are supported (`New`, `Add`, `Remove`, etc.).
 - For non-new operations, `Keep walls as separate part` can retain a copy.
 - Optional filleting rounds wall vertical edges and bottom edges.

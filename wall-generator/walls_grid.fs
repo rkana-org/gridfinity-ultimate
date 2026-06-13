@@ -75,6 +75,11 @@ export const wallsGrid = defineFeature(function(context is Context, id is Id, de
             definition.layoutJson is string;
         }
 
+        annotation { "Name" : "Outer wall EasyGrab inset",
+                     "Description" : "When an EasyGrab is on the outer grid boundary, keep the wall-side edge fixed but shift the quarter arc inward by this amount.",
+                     "Default" : 0 * meter }
+        isLength(definition.easyGrabOuterWallInset, LENGTH_BOUNDS);
+
         annotation { "Name" : "Debug EasyGrab" }
         definition.debugEasyGrab is boolean;
 
@@ -238,6 +243,10 @@ function buildEasyGrabs(context is Context, id is Id, definition is map, sketchP
         return { "arcSeedPoints" : [] };
 
     const eps = TOLERANCE.zeroLength * meter;
+    const outerWallInset = getEasyGrabOuterWallInset(definition);
+    if (outerWallInset < -eps)
+        throw regenError("Outer wall EasyGrab inset cannot be negative.", ["easyGrabOuterWallInset"]);
+
     var arcSeedPoints = [];
     var grabBodies = [];
     for (var i = 0; i < size(easygrabs); i += 1)
@@ -254,10 +263,14 @@ function buildEasyGrabs(context is Context, id is Id, definition is map, sketchP
         if (effectiveRadius > data.maxRadius)
             effectiveRadius = data.maxRadius;
 
+        const arcInset = data.outerWall ? outerWallInset : 0 * meter;
+
         if (definition.debugEasyGrab)
             println("easygrab[" ~ i ~ "] side=" ~ grab.side ~
                     ", requested radius=" ~ toString(grab.radius) ~
                     ", effective radius=" ~ toString(effectiveRadius) ~
+                    ", outer wall=" ~ toString(data.outerWall) ~
+                    ", arc inset=" ~ toString(arcInset) ~
                     ", max region radius=" ~ toString(data.maxRadius) ~
                     ", span length=" ~ toString(data.length) ~ ", origin=" ~ toString(data.origin));
 
@@ -272,15 +285,31 @@ function buildEasyGrabs(context is Context, id is Id, definition is map, sketchP
         var sketch = newSketchOnPlane(context, sketchId, { "sketchPlane" : profilePlane });
         skLineSegment(sketch, "floor", {
                 "start" : vector(0 * meter, 0 * meter),
-                "end" : vector(effectiveRadius, 0 * meter)
+                "end" : vector(arcInset + effectiveRadius, 0 * meter)
         });
         skArc(sketch, "arc", {
-                "start" : vector(effectiveRadius, 0 * meter),
-                "mid" : vector(k * effectiveRadius, k * effectiveRadius),
-                "end" : vector(0 * meter, effectiveRadius)
+                "start" : vector(arcInset + effectiveRadius, 0 * meter),
+                "mid" : vector(arcInset + k * effectiveRadius, k * effectiveRadius),
+                "end" : vector(arcInset, effectiveRadius)
         });
+        var wallTop = effectiveRadius;
+        if (arcInset > eps)
+        {
+            wallTop = definition.height;
+            if (definition.height - effectiveRadius > eps)
+            {
+                skLineSegment(sketch, "arcBack", {
+                        "start" : vector(arcInset, effectiveRadius),
+                        "end" : vector(arcInset, definition.height)
+                });
+            }
+            skLineSegment(sketch, "topInset", {
+                    "start" : vector(arcInset, definition.height),
+                    "end" : vector(0 * meter, definition.height)
+            });
+        }
         skLineSegment(sketch, "wall", {
-                "start" : vector(0 * meter, effectiveRadius),
+                "start" : vector(0 * meter, wallTop),
                 "end" : vector(0 * meter, 0 * meter)
         });
         skSolve(sketch);
@@ -357,7 +386,8 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
                     "inwardDir" : inward,
                     "spanDir" : cross(inward, normal),
                     "length" : sx1 - sx0,
-                    "maxRadius" : maxRadius };
+                    "maxRadius" : maxRadius,
+                    "outerWall" : grab.r0 == 0 };
         }
         else
         {
@@ -367,7 +397,8 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
                     "inwardDir" : inward,
                     "spanDir" : cross(inward, normal),
                     "length" : sx1 - sx0,
-                    "maxRadius" : maxRadius };
+                    "maxRadius" : maxRadius,
+                    "outerWall" : grab.r1 == nrows - 1 };
         }
     }
 
@@ -384,7 +415,8 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
                 "inwardDir" : inward,
                 "spanDir" : cross(inward, normal),
                 "length" : sy1 - sy0,
-                "maxRadius" : maxRadius };
+                "maxRadius" : maxRadius,
+                "outerWall" : grab.c0 == 0 };
     }
     else
     {
@@ -394,8 +426,14 @@ function easyGrabSideData(grab is map, wallThickness is ValueWithUnits, skipOute
                 "inwardDir" : inward,
                 "spanDir" : cross(inward, normal),
                 "length" : sy1 - sy0,
-                "maxRadius" : maxRadius };
+                "maxRadius" : maxRadius,
+                "outerWall" : grab.c1 == ncols - 1 };
     }
+}
+
+function getEasyGrabOuterWallInset(definition is map) returns ValueWithUnits
+{
+    return definition.easyGrabOuterWallInset == undefined ? 0 * meter : definition.easyGrabOuterWallInset;
 }
 
 function easyGrabMaxRadius(faceSpan is ValueWithUnits, rawSpan is ValueWithUnits, requestedRadius is ValueWithUnits) returns ValueWithUnits
